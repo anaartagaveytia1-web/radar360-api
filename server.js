@@ -1,167 +1,166 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
 import nodemailer from "nodemailer";
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "5mb" }));
 
-// --- storage local ---
+// --- pasta de dados ---
 const DATA_DIR = "./data";
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-const INDEX_FILE = path.join(DATA_DIR, "planos_index.json");
-if (!fs.existsSync(INDEX_FILE)) fs.writeFileSync(INDEX_FILE, "[]", "utf8");
 
-const ts = () => new Date().toISOString().replace(/[:.]/g, "-");
-const loadIndex = () => {
-  try { return JSON.parse(fs.readFileSync(INDEX_FILE, "utf8")); }
-  catch { return []; }
-};
-const saveIndex = (idx) => fs.writeFileSync(INDEX_FILE, JSON.stringify(idx, null, 2), "utf8");
-const saveBody = (prefix, body) => {
-  const file = path.join(DATA_DIR, `${prefix}-${ts()}.json`);
+function saveBody(prefix, body) {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const file = path.join(DATA_DIR, `${prefix}-${ts}.json`);
   fs.writeFileSync(file, JSON.stringify(body, null, 2), "utf8");
   return file;
-};
-const genId = () => "PA-" + ts() + "-" + crypto.randomBytes(3).toString("hex");
-const genToken = () => crypto.randomBytes(16).toString("hex");
+}
 
-// --- e-mail (desabilita automaticamente se não houver SMTP) ---
-const mailFrom = process.env.MAIL_FROM || "noreply@safetytechsc.com.br";
-const smtpUser = process.env.SMTP_USER;
-const smtpPass = process.env.SMTP_PASS;
-const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
-const smtpPort = Number(process.env.SMTP_PORT || 587);
-const smtpSecure = String(process.env.SMTP_SECURE || "false") === "true";
+// --- transporter de e-mail (via SMTP) ---
+const EMAIL_ENABLED =
+  !!process.env.SMTP_HOST &&
+  !!process.env.SMTP_PORT &&
+  !!process.env.SMTP_USER &&
+  !!process.env.SMTP_PASS &&
+  !!process.env.MAIL_FROM;
 
 let transporter = null;
-let emailEnabled = false;
-try {
-  if (smtpUser && smtpPass) {
-    transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: { user: smtpUser, pass: smtpPass },
-    });
-    emailEnabled = true;
+if (EMAIL_ENABLED) {
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: Number(process.env.SMTP_PORT) === 465, // 465 = SSL
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+// helper para enviar email (não quebra o fluxo se falhar)
+async function sendPlanEmail({ to, subject, html }) {
+  if (!EMAIL_ENABLED || !transporter) {
+    return { ok: false, reason: "email_not_configured" };
   }
-} catch (e) {
-  console.warn("E-mail desabilitado:", e?.message || e);
-  emailEnabled = false;
-}
-
-async function sendPlanEmail({ to, responsavel, link, origem, secao, indicador, unidade, ref_mes }) {
-  if (!emailEnabled || !to) return;
-  const subject = "Plano de Ação atribuído — Radar 360°";
-  const html = `
-    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#111">
-      <h2>Plano de Ação — Radar 360°</h2>
-      <p>Olá <b>${responsavel || ""}</b>, você recebeu um plano de ação.</p>
-      <ul>
-        ${origem ? `<li><b>Origem:</b> ${origem}</li>` : ""}
-        ${secao ? `<li><b>Seção:</b> ${secao}</li>` : ""}
-        ${indicador ? `<li><b>Indicador:</b> ${indicador}</li>` : ""}
-        ${unidade ? `<li><b>Unidade:</b> ${unidade}</li>` : ""}
-        ${ref_mes ? `<li><b>Mês ref.:</b> ${ref_mes}</li>` : ""}
-      </ul>
-      <p><a href="${link}" style="background:#2563eb;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none">Abrir Plano</a></p>
-      <p style="font-size:12px;color:#666">Se o botão não abrir: ${link}</p>
-    </div>
-  `;
-  await transporter.sendMail({ from: mailFrom, to, subject, html });
-}
-
-// --- rotas simples ---
-app.get("/", (req, res) => res.send("Radar360 API OK"));
-
-app.post("/api/radar/ambiente", (req, res) => res.json({ ok: true, stored: saveBody("ambiente", req.body) }));
-app.post("/api/radar/psicossocial", (req, res) => res.json({ ok: true, stored: saveBody("psicossocial", req.body) }));
-app.post("/api/radar/lideranca", (req, res) => res.json({ ok: true, stored: saveBody("lideranca", req.body) }));
-app.post("/api/radar/rh", (req, res) => res.json({ ok: true, stored: saveBody("rh", req.body) }));
-
-// cria ou encerra plano
-app.post("/api/planos", async (req, res) => {
   try {
-    const body = req.body || {};
-
-    // ENCERRAMENTO (status Concluído)
-    if (String(body.status || "").toLowerCase().includes("conclu")) {
-      const file = saveBody("plano-close", body);
-      return res.json({ ok: true, type: "closed", stored: file });
-    }
-
-    // CRIAÇÃO
-    const plano_id = body.plano_id || genId();
-    const token = genToken();
-
-    const idx = loadIndex();
-    const item = {
-      plano_id,
-      token,
-      criado_em: new Date().toISOString(),
-      origem: body.origem || body.contexto?.origem || null,
-      secao: body.secao || body.contexto?.secao || null,
-      indicador: body.indicador || body.pergunta_txt || body.contexto?.indicador || null,
-      unidade: body.unidade || body.contexto?.unidade || null,
-      ref_mes: body.ref_mes || body.contexto?.ref_mes || null,
-      responsavel_nome: body.responsavel_nome || null,
-      responsavel_email: body.responsavel_email || null,
-      status: "Aberto",
-    };
-    idx.push(item); saveIndex(idx);
-
-    const saved = { ...body, plano_id, token, status: "Aberto" };
-    const file = saveBody("plano", saved);
-
-    const publicBase = process.env.PUBLIC_BASE_URL || "https://www.safetytechsc.com.br";
-    const link =
-      `${publicBase}/radar360/radar-acao.html?` +
-      `plano_id=${encodeURIComponent(plano_id)}&token=${encodeURIComponent(token)}` +
-      (item.origem ? `&origem=${encodeURIComponent(item.origem)}` : "") +
-      (item.secao ? `&secao=${encodeURIComponent(item.secao)}` : "") +
-      (item.indicador ? `&indicador=${encodeURIComponent(item.indicador)}` : "") +
-      (item.unidade ? `&unidade=${encodeURIComponent(item.unidade)}` : "") +
-      (item.ref_mes ? `&ref=${encodeURIComponent(item.ref_mes)}` : "");
-
-    if (item.responsavel_email) {
-      try {
-        await sendPlanEmail({
-          to: item.responsavel_email,
-          responsavel: item.responsavel_nome,
-          link,
-          origem: item.origem,
-          secao: item.secao,
-          indicador: item.indicador,
-          unidade: item.unidade,
-          ref_mes: item.ref_mes,
-        });
-      } catch (e) {
-        console.warn("Falha ao enviar e-mail (prosseguindo):", e?.message || e);
-      }
-    }
-
-    res.json({ ok: true, type: "created", plano_id, token, link, stored: file });
+    const info = await transporter.sendMail({
+      from: process.env.MAIL_FROM, // ex.: "SafetyTech Radar <no-reply@safetytechsc.com.br>"
+      to,
+      subject,
+      html,
+    });
+    return { ok: true, id: info.messageId };
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: String(e) });
+    console.error("Email error:", e.message);
+    return { ok: false, reason: e.message };
   }
+}
+
+// --- health ---
+app.get("/", (_req, res) => res.send("Radar360 API OK"));
+
+// --- endpoints já existentes para armazenar payloads dos formulários ---
+app.post("/api/radar/ambiente", (req, res) => {
+  const file = saveBody("ambiente", req.body);
+  res.json({ ok: true, stored: file });
+});
+app.post("/api/radar/psicossocial", (req, res) => {
+  const file = saveBody("psicossocial", req.body);
+  res.json({ ok: true, stored: file });
+});
+app.post("/api/radar/lideranca", (req, res) => {
+  const file = saveBody("lideranca", req.body);
+  res.json({ ok: true, stored: file });
+});
+// (opcional) se quiser armazenar o RH:
+app.post("/api/radar/rh", (req, res) => {
+  const file = saveBody("rh", req.body);
+  res.json({ ok: true, stored: file });
 });
 
-// consulta simples
-app.get("/api/planos/:id", (req, res) => {
-  const { id } = req.params;
-  const { token } = req.query;
-  const idx = loadIndex();
-  const item = idx.find(p => p.plano_id === id);
-  if (!item) return res.status(404).json({ ok: false, error: "Plano não encontrado" });
-  if (token && token !== item.token) return res.status(403).json({ ok: false, error: "Token inválido" });
-  res.json({ ok: true, plano: item });
+// --- criação de plano de ação ---
+app.post("/api/planos", async (req, res) => {
+  const body = req.body || {};
+  const {
+    origem,          // "Ambiente" | "Psicossocial" | "Liderança" | "RH"
+    secao,           // ex.: "Comunicação & Liderança"
+    indicador,       // texto da pergunta
+    unidade,         // ex.: "Planta SC"
+    ref_mes,         // "YYYY-MM" (opcional)
+    responsavel_nome,
+    responsavel_email,
+  } = body;
+
+  // gera ID e token simples
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const plano_id = `PA-${ts}-${Math.random().toString(16).slice(2, 8)}`;
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+
+  // salva o plano
+  const plano = {
+    plano_id,
+    token,
+    criado_em: new Date().toISOString(),
+    origem: origem || null,
+    secao: secao || null,
+    indicador: indicador || null,
+    unidade: unidade || null,
+    ref_mes: ref_mes || null,
+    responsavel_nome: responsavel_nome || null,
+    responsavel_email: responsavel_email || null,
+    status: "ABERTO",
+  };
+  const file = saveBody("plano", plano);
+
+  // monta link público do formulário de ação (seu front)
+  // aceita query (?plano_id=...&token=...) e hash (#plano_id=...&token=...)
+  const baseFront = process.env.RADAR_FRONT_BASE || "https://www.safetytechsc.com.br/radar360";
+  const link = `${baseFront}/radar-acao.html?plano_id=${encodeURIComponent(plano_id)}&token=${encodeURIComponent(token)}`;
+
+  // tenta enviar e-mail (se configurado e houver e-mail)
+  let email_status = "skipped";
+  if (responsavel_email) {
+    const subject = `Plano de Ação • ${origem || "Radar 360"} • ${unidade || ""}`.trim();
+    const html = `
+      <div style="font-family:system-ui,Segoe UI,Roboto,Arial">
+        <h2>Plano de Ação atribuído</h2>
+        <p><b>Origem:</b> ${origem || "-"}<br/>
+           <b>Seção:</b> ${secao || "-"}<br/>
+           <b>Indicador:</b> ${indicador || "-"}<br/>
+           <b>Unidade:</b> ${unidade || "-"}<br/>
+           ${ref_mes ? `<b>Referência:</b> ${ref_mes}<br/>` : ""}
+        </p>
+        <p>Clique para abrir e concluir (anexe evidência ao finalizar):<br/>
+          <a href="${link}" target="_blank">${link}</a>
+        </p>
+        <hr/>
+        <p style="font-size:12px;color:#666">Se o link acima não abrir, copie e cole no navegador.
+        Também funciona em: ${baseFront}/radar-acao.html#plano_id=${encodeURIComponent(plano_id)}&token=${encodeURIComponent(token)}</p>
+      </div>
+    `;
+    const sent = await sendPlanEmail({
+      to: responsavel_email,
+      subject,
+      html,
+    });
+    email_status = sent.ok ? "sent" : `failed:${sent.reason}`;
+  }
+
+  res.json({
+    ok: true,
+    type: "created",
+    stored: file,
+    plano_id,
+    token,
+    link,
+    email_status,
+  });
 });
 
+// --- porta ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
-
