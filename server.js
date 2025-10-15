@@ -81,6 +81,23 @@ app.post("/api/radar/rh", (req, res) => {
   const file = saveBody("rh", req.body);
   res.json({ ok: true, stored: file });
 });
+// Debug seguro das variáveis de e-mail (não expõe senhas)
+app.get("/api/debug-email", (_req, res) => {
+  res.json({
+    ok: true,
+    configured: !!(
+      process.env.SMTP_HOST &&
+      process.env.SMTP_PORT &&
+      process.env.SMTP_USER &&
+      process.env.SMTP_PASS &&
+      process.env.MAIL_FROM
+    ),
+    host: process.env.SMTP_HOST || null,
+    port: process.env.SMTP_PORT || null,
+    user: process.env.SMTP_USER || null,
+    from: process.env.MAIL_FROM || null
+  });
+});
 
 // --- criação de plano de ação ---
 app.post("/api/planos", async (req, res) => {
