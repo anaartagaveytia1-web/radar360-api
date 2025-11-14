@@ -1,17 +1,14 @@
 {
   "name": "radar360-api",
   "version": "1.0.0",
-  "type": "module",
-  "main": "server.js",
+  "description": "API do Radar de Risco 360°",
+  "main": "servidor.js",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "start": "node servidor.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "nodemailer": "^6.9.13"
+    "nodemailer": "^6.9.15"
   }
 }
