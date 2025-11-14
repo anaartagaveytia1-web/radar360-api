@@ -1,30 +1,19 @@
-// servidor.js
-import express from "express";
-import cors from "cors";
-import fs from "fs";
-import path from "path";
-import nodemailer from "nodemailer";
+// servidor.js  (versão CommonJS, compatível com Render)
 
+// ====== IMPORTS BÁSICOS ======
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const nodemailer = require("nodemailer");
+
+// ====== APP & MIDDLEWARES ======
 const app = express();
-
-/**
- * CORS – por enquanto liberado para qualquer origem.
- * Depois podemos restringir para: https://www.safetytechsc.com.br
- */
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
-
+app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
-// ----------------------------------------------------
-// PASTA DE DADOS (onde serão salvos os JSONs)
-// ----------------------------------------------------
-const DATA_DIR = "./data";
+// ====== PASTA DE DADOS ======
+const DATA_DIR = path.join(__dirname, "data");
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -36,9 +25,7 @@ function saveBody(prefix, body) {
   return file;
 }
 
-// -----------------------------------------------------
-// CONFIG DE E-MAIL (SMTP via variáveis de ambiente)
-// -----------------------------------------------------
+// ====== EMAIL (SMTP) OPCIONAL ======
 const EMAIL_ENABLED =
   !!process.env.SMTP_HOST &&
   !!process.env.SMTP_PORT &&
@@ -47,7 +34,6 @@ const EMAIL_ENABLED =
   !!process.env.MAIL_FROM;
 
 let transporter = null;
-
 if (EMAIL_ENABLED) {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -60,7 +46,6 @@ if (EMAIL_ENABLED) {
   });
 }
 
-// helper para enviar email (não quebra o fluxo se falhar)
 async function sendPlanEmail({ to, subject, html }) {
   if (!EMAIL_ENABLED || !transporter) {
     return { ok: false, reason: "email_not_configured" };
@@ -79,20 +64,32 @@ async function sendPlanEmail({ to, subject, html }) {
   }
 }
 
-// -----------------------------------------------------
-// HEALTHCHECKS
-// -----------------------------------------------------
+// ====== ROTAS BÁSICAS ======
+
+// health-check simples
 app.get("/", (_req, res) => {
   res.send("Radar360 API OK");
 });
 
+// ping para teste rápido
 app.get("/api/ping", (_req, res) => {
-  res.json({ ok: true, message: "pong" });
+  res.json({ ok: true, msg: "pong" });
 });
 
-// -----------------------------------------------------
-// ENDPOINTS PARA GUARDAR OS RADARES (AMB/PSI/LID/RH)
-// -----------------------------------------------------
+// debug de configuração de e-mail (sem mostrar senha)
+app.get("/api/debug-email", (_req, res) => {
+  res.json({
+    ok: true,
+    configured: EMAIL_ENABLED,
+    host: process.env.SMTP_HOST || null,
+    port: process.env.SMTP_PORT || null,
+    user: process.env.SMTP_USER || null,
+    from: process.env.MAIL_FROM || null,
+  });
+});
+
+// ====== ENDPOINTS DOS FORMULÁRIOS (AMB, PSICO, LIDERANÇA, RH) ======
+
 app.post("/api/radar/ambiente", (req, res) => {
   const file = saveBody("ambiente", req.body);
   res.json({ ok: true, stored: file });
@@ -108,35 +105,21 @@ app.post("/api/radar/lideranca", (req, res) => {
   res.json({ ok: true, stored: file });
 });
 
-// (opcional) se quiser armazenar também o resultado do módulo RH:
 app.post("/api/radar/rh", (req, res) => {
   const file = saveBody("rh", req.body);
   res.json({ ok: true, stored: file });
 });
 
-// Debug seguro das variáveis de e-mail (não expõe senhas)
-app.get("/api/debug-email", (_req, res) => {
-  res.json({
-    ok: true,
-    configured: EMAIL_ENABLED,
-    host: process.env.SMTP_HOST || null,
-    port: process.env.SMTP_PORT || null,
-    user: process.env.SMTP_USER || null,
-    from: process.env.MAIL_FROM || null,
-  });
-});
+// ====== CRIAÇÃO DE PLANO DE AÇÃO ======
 
-// -----------------------------------------------------
-// CRIAÇÃO DE PLANO DE AÇÃO (/api/planos)
-// -----------------------------------------------------
 app.post("/api/planos", async (req, res) => {
   const body = req.body || {};
   const {
-    origem, // "Ambiente" | "Psicossocial" | "Liderança" | "RH"
-    secao, // ex.: "Comunicação & Liderança"
-    indicador, // texto da pergunta
-    unidade, // ex.: "Planta SC"
-    ref_mes, // "YYYY-MM" (opcional)
+    origem,          // "Ambiente" | "Psicossocial" | "Liderança & Gestão" | "RH"
+    secao,           // ex.: "Comunicação & Liderança"
+    indicador,       // texto da pergunta
+    unidade,         // ex.: "Planta SC"
+    ref_mes,         // "YYYY-MM" (opcional)
     responsavel_nome,
     responsavel_email,
     prazo,
@@ -144,14 +127,12 @@ app.post("/api/planos", async (req, res) => {
     acao,
   } = body;
 
-  // gera ID e token simples
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const plano_id = `PA-${ts}-${Math.random().toString(16).slice(2, 8)}`;
   const token =
     Math.random().toString(36).slice(2) +
     Math.random().toString(36).slice(2);
 
-  // monta objeto do plano
   const plano = {
     plano_id,
     token,
@@ -169,10 +150,8 @@ app.post("/api/planos", async (req, res) => {
     status: "ABERTO",
   };
 
-  // salva o plano em arquivo JSON
   const file = saveBody("plano", plano);
 
-  // monta link público do formulário de ação (front)
   const baseFront =
     process.env.RADAR_FRONT_BASE ||
     "https://www.safetytechsc.com.br/radar360";
@@ -180,44 +159,37 @@ app.post("/api/planos", async (req, res) => {
     plano_id
   )}&token=${encodeURIComponent(token)}`;
 
-  // tenta enviar e-mail (se configurado e houver e-mail)
   let email_status = "skipped";
   if (responsavel_email) {
     const subject = `Plano de Ação • ${origem || "Radar 360"} • ${
       unidade || ""
     }`.trim();
-
     const html = `
       <div style="font-family:system-ui,Segoe UI,Roboto,Arial">
         <h2>Plano de Ação atribuído</h2>
-        <p>
-          <b>Origem:</b> ${origem || "-"}<br/>
-          <b>Seção:</b> ${secao || "-"}<br/>
-          <b>Indicador:</b> ${indicador || "-"}<br/>
-          <b>Unidade:</b> ${unidade || "-"}<br/>
-          ${ref_mes ? `<b>Referência:</b> ${ref_mes}<br/>` : ""}
+        <p><b>Origem:</b> ${origem || "-"}<br/>
+           <b>Seção:</b> ${secao || "-"}<br/>
+           <b>Indicador:</b> ${indicador || "-"}<br/>
+           <b>Unidade:</b> ${unidade || "-"}<br/>
+           ${ref_mes ? `<b>Referência:</b> ${ref_mes}<br/>` : ""}
         </p>
-        <p>
-          Clique para abrir e concluir (anexe evidência ao finalizar):<br/>
+        <p>Clique para abrir e concluir (anexe evidência ao finalizar):<br/>
           <a href="${link}" target="_blank">${link}</a>
         </p>
         <hr/>
         <p style="font-size:12px;color:#666">
           Se o link acima não abrir, copie e cole no navegador.<br/>
-          Também funciona em:<br/>
-          ${baseFront}/radar-acao.html#plano_id=${encodeURIComponent(
+          Também funciona em: ${baseFront}/radar-acao.html#plano_id=${encodeURIComponent(
             plano_id
           )}&token=${encodeURIComponent(token)}
         </p>
       </div>
     `;
-
     const sent = await sendPlanEmail({
       to: responsavel_email,
       subject,
       html,
     });
-
     email_status = sent.ok ? "sent" : `failed:${sent.reason}`;
   }
 
@@ -232,15 +204,8 @@ app.post("/api/planos", async (req, res) => {
   });
 });
 
-// -----------------------------------------------------
-// START DO SERVIDOR
-// -----------------------------------------------------
+// ====== START DO SERVIDOR ======
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ Radar360 API ouvindo na porta ${PORT}`);
+  console.log(`Radar360 API rodando na porta ${PORT}`);
 });
-
-
-// --- porta ---
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
