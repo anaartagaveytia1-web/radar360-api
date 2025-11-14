@@ -21,9 +21,9 @@ app.use(
 
 app.use(express.json({ limit: "5mb" }));
 
-// -----------------------------------------------------
+// ----------------------------------------------------
 // PASTA DE DADOS (onde serão salvos os JSONs)
-// -----------------------------------------------------
+// ----------------------------------------------------
 const DATA_DIR = "./data";
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
