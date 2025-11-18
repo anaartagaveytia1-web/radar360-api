@@ -203,6 +203,74 @@ app.post("/api/planos", async (req, res) => {
     email_status,
   });
 });
+// ====== LISTAGEM PARA DASHBOARD ======
+
+function listByPrefix(prefix) {
+  // Lê todos os arquivos da pasta /data que começam com o prefixo
+  const files = fs
+    .readdirSync(DATA_DIR)
+    .filter((f) => f.startsWith(prefix + "-") && f.endsWith(".json"))
+    .sort(); // ordena do mais antigo para o mais novo
+
+  // Mapeia cada arquivo para { file, ...conteudoJson }
+  return files.map((name) => {
+    const full = path.join(DATA_DIR, name);
+    const content = JSON.parse(fs.readFileSync(full, "utf8"));
+    return {
+      file: name,
+      ...content,
+    };
+  });
+}
+
+// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano
+app.get("/api/listar", (req, res) => {
+  const { tipo } = req.query;
+
+  if (!tipo) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "tipo_required", hint: "use ?tipo=psicossocial" });
+  }
+
+  let prefix = null;
+  switch (tipo) {
+    case "ambiente":
+      prefix = "ambiente";
+      break;
+    case "psicossocial":
+      prefix = "psicossocial";
+      break;
+    case "lideranca":
+      prefix = "lideranca";
+      break;
+    case "rh":
+      prefix = "rh";
+      break;
+    case "plano":
+      prefix = "plano";
+      break;
+    default:
+      return res.status(400).json({
+        ok: false,
+        error: "tipo_invalid",
+        allowed: ["ambiente", "psicossocial", "lideranca", "rh", "plano"],
+      });
+  }
+
+  try {
+    const itens = listByPrefix(prefix);
+    res.json({
+      ok: true,
+      tipo,
+      total: itens.length,
+      itens,
+    });
+  } catch (e) {
+    console.error("Erro ao listar:", e.message);
+    res.status(500).json({ ok: false, error: "read_error", detail: e.message });
+  }
+});
 
 // ====== START DO SERVIDOR ======
 const PORT = process.env.PORT || 10000;
