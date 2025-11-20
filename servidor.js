@@ -64,6 +64,19 @@ async function sendPlanEmail({ to, subject, html }) {
   }
 }
 
+// ====== FUNÇÃO AUXILIAR PARA empresaID ======
+function ensureEmpresaID(body = {}) {
+  const normalized =
+    body.empresaID ||
+    process.env.EMPRESA_ID_PADRAO || // se quiser, pode setar no Render
+    "empresa-demo-1";                // fallback para testes
+
+  return {
+    ...body,
+    empresaID: normalized,
+  };
+}
+
 // ====== ROTAS BÁSICAS ======
 
 // health-check simples
@@ -91,30 +104,37 @@ app.get("/api/debug-email", (_req, res) => {
 // ====== ENDPOINTS DOS FORMULÁRIOS (AMB, PSICO, LIDERANÇA, RH) ======
 
 app.post("/api/radar/ambiente", (req, res) => {
-  const file = saveBody("ambiente", req.body);
-  res.json({ ok: true, stored: file });
+  const body = ensureEmpresaID(req.body || {});
+  const file = saveBody("ambiente", body);
+  res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/psicossocial", (req, res) => {
-  const file = saveBody("psicossocial", req.body);
-  res.json({ ok: true, stored: file });
+  const body = ensureEmpresaID(req.body || {});
+  const file = saveBody("psicossocial", body);
+  res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/lideranca", (req, res) => {
-  const file = saveBody("lideranca", req.body);
-  res.json({ ok: true, stored: file });
+  const body = ensureEmpresaID(req.body || {});
+  const file = saveBody("lideranca", body);
+  res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/rh", (req, res) => {
-  const file = saveBody("rh", req.body);
-  res.json({ ok: true, stored: file });
+  const body = ensureEmpresaID(req.body || {});
+  const file = saveBody("rh", body);
+  res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 // ====== CRIAÇÃO DE PLANO DE AÇÃO ======
 
 app.post("/api/planos", async (req, res) => {
-  const body = req.body || {};
+  const baseBody = req.body || {};
+  const body = ensureEmpresaID(baseBody); // garante empresaID também nos planos
+
   const {
+    empresaID,
     origem,          // "Ambiente" | "Psicossocial" | "Liderança & Gestão" | "RH"
     secao,           // ex.: "Comunicação & Liderança"
     indicador,       // texto da pergunta
@@ -137,6 +157,7 @@ app.post("/api/planos", async (req, res) => {
     plano_id,
     token,
     criado_em: new Date().toISOString(),
+    empresaID: empresaID || null,
     origem: origem || null,
     secao: secao || null,
     indicador: indicador || null,
@@ -167,7 +188,8 @@ app.post("/api/planos", async (req, res) => {
     const html = `
       <div style="font-family:system-ui,Segoe UI,Roboto,Arial">
         <h2>Plano de Ação atribuído</h2>
-        <p><b>Origem:</b> ${origem || "-"}<br/>
+        <p><b>Empresa:</b> ${empresaID || "-"}<br/>
+           <b>Origem:</b> ${origem || "-"}<br/>
            <b>Seção:</b> ${secao || "-"}<br/>
            <b>Indicador:</b> ${indicador || "-"}<br/>
            <b>Unidade:</b> ${unidade || "-"}<br/>
@@ -201,8 +223,10 @@ app.post("/api/planos", async (req, res) => {
     token,
     link,
     email_status,
+    empresaID: empresaID || null,
   });
 });
+
 // ====== LISTAGEM PARA DASHBOARD ======
 
 function listByPrefix(prefix) {
@@ -223,9 +247,9 @@ function listByPrefix(prefix) {
   });
 }
 
-// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano
+// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano&empresaID=xxx
 app.get("/api/listar", (req, res) => {
-  const { tipo } = req.query;
+  const { tipo, empresaID } = req.query;
 
   if (!tipo) {
     return res
@@ -260,11 +284,18 @@ app.get("/api/listar", (req, res) => {
 
   try {
     const itens = listByPrefix(prefix);
+
+    // se empresaID vier na query, filtra
+    const filtrados = empresaID
+      ? itens.filter((it) => it.empresaID === empresaID)
+      : itens;
+
     res.json({
       ok: true,
       tipo,
-      total: itens.length,
-      itens,
+      empresaID: empresaID || null,
+      total: filtrados.length,
+      itens: filtrados,
     });
   } catch (e) {
     console.error("Erro ao listar:", e.message);
