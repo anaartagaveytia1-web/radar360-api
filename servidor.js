@@ -128,6 +128,15 @@ app.post("/api/radar/rh", (req, res) => {
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
+// ======================= NOVO FORMULÁRIO =======================
+// ======================= RAIO-X DO RISCO =======================
+
+app.post("/api/radar/raiox", (req, res) => {
+  const body = ensureEmpresaID(req.body);
+  const file = saveBody("raiox", body);
+  res.json({ ok: true, stored: file, empresaID: body.empresaID });
+});
+
 // =============================================================
 // =================== CRIAR PLANO DE AÇÃO =====================
 // =============================================================
@@ -230,7 +239,7 @@ app.post("/api/planos", async (req, res) => {
 });
 
 // =============================================================
-// ====================== SAFETY VOICE ==========================
+// ======================= SAFETY VOICE ==========================
 // =============================================================
 
 app.post("/api/radar/voice", (req, res) => {
@@ -286,7 +295,7 @@ function listByPrefix(prefix) {
 /*
  * GET /api/listar?tipo=...&empresaID=...
  * tipos permitidos:
- * ambiente | psicossocial | lideranca | rh | plano | voice
+ * ambiente | psicossocial | lideranca | rh | plano | voice | raiox
  */
 app.get("/api/listar", (req, res) => {
   const { tipo, empresaID } = req.query;
@@ -319,6 +328,9 @@ app.get("/api/listar", (req, res) => {
     case "voice":
       prefix = "voice";
       break;
+    case "raiox":
+      prefix = "raiox";
+      break;
     default:
       return res.status(400).json({
         ok: false,
@@ -330,6 +342,7 @@ app.get("/api/listar", (req, res) => {
           "rh",
           "plano",
           "voice",
+          "raiox",
         ],
       });
   }
