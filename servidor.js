@@ -1,4 +1,4 @@
-// servidor.js  (versão CommonJS, compatível com Render)
+// servidor.js — Radar360 API (versão final e revisada)
 
 // ====== IMPORTS BÁSICOS ======
 const express = require("express");
@@ -18,6 +18,7 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// Salva JSON na pasta /data
 function saveBody(prefix, body) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const file = path.join(DATA_DIR, `${prefix}-${ts}.json`);
@@ -25,7 +26,7 @@ function saveBody(prefix, body) {
   return file;
 }
 
-// ====== EMAIL (SMTP) OPCIONAL ======
+// ====== CONFIG DE EMAIL OPCIONAL ======
 const EMAIL_ENABLED =
   !!process.env.SMTP_HOST &&
   !!process.env.SMTP_PORT &&
@@ -34,11 +35,12 @@ const EMAIL_ENABLED =
   !!process.env.MAIL_FROM;
 
 let transporter = null;
+
 if (EMAIL_ENABLED) {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
-    secure: Number(process.env.SMTP_PORT) === 465, // 465 = SSL
+    secure: Number(process.env.SMTP_PORT) === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -46,13 +48,14 @@ if (EMAIL_ENABLED) {
   });
 }
 
+// Enviar e-mail de plano (caso configurado no Render)
 async function sendPlanEmail({ to, subject, html }) {
   if (!EMAIL_ENABLED || !transporter) {
     return { ok: false, reason: "email_not_configured" };
   }
   try {
     const info = await transporter.sendMail({
-      from: process.env.MAIL_FROM, // ex.: "SafetyTech Radar <no-reply@safetytechsc.com.br>"
+      from: process.env.MAIL_FROM,
       to,
       subject,
       html,
@@ -64,32 +67,28 @@ async function sendPlanEmail({ to, subject, html }) {
   }
 }
 
-// ====== FUNÇÃO AUXILIAR PARA empresaID ======
+// ====== FUNÇÃO PARA GARANTIR empresaID ======
 function ensureEmpresaID(body = {}) {
-  const normalized =
-    body.empresaID ||
-    process.env.EMPRESA_ID_PADRAO || // se quiser, pode setar no Render
-    "empresa-demo-1";                // fallback para testes
-
   return {
     ...body,
-    empresaID: normalized,
+    empresaID:
+      body.empresaID ||
+      process.env.EMPRESA_ID_PADRAO ||
+      "empresa-demo-1",
   };
 }
 
-// ====== ROTAS BÁSICAS ======
+// =============================================================
+// ======================= ROTAS BÁSICAS ========================
+// =============================================================
 
-// health-check simples
-app.get("/", (_req, res) => {
-  res.send("Radar360 API OK");
-});
+// Health check
+app.get("/", (_req, res) => res.send("Radar360 API OK"));
 
-// ping para teste rápido
-app.get("/api/ping", (_req, res) => {
-  res.json({ ok: true, msg: "pong" });
-});
+// Ping
+app.get("/api/ping", (_req, res) => res.json({ ok: true, msg: "pong" }));
 
-// debug de configuração de e-mail (sem mostrar senha)
+// Debug de email (não mostra senha)
 app.get("/api/debug-email", (_req, res) => {
   res.json({
     ok: true,
@@ -101,45 +100,48 @@ app.get("/api/debug-email", (_req, res) => {
   });
 });
 
-// ====== ENDPOINTS DOS FORMULÁRIOS (AMB, PSICO, LIDERANÇA, RH) ======
+// =============================================================
+// ================= FORMULÁRIOS DO RADAR =======================
+// =============================================================
 
 app.post("/api/radar/ambiente", (req, res) => {
-  const body = ensureEmpresaID(req.body || {});
+  const body = ensureEmpresaID(req.body);
   const file = saveBody("ambiente", body);
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/psicossocial", (req, res) => {
-  const body = ensureEmpresaID(req.body || {});
+  const body = ensureEmpresaID(req.body);
   const file = saveBody("psicossocial", body);
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/lideranca", (req, res) => {
-  const body = ensureEmpresaID(req.body || {});
+  const body = ensureEmpresaID(req.body);
   const file = saveBody("lideranca", body);
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
 app.post("/api/radar/rh", (req, res) => {
-  const body = ensureEmpresaID(req.body || {});
+  const body = ensureEmpresaID(req.body);
   const file = saveBody("rh", body);
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
-// ====== CRIAÇÃO DE PLANO DE AÇÃO ======
+// =============================================================
+// =================== CRIAR PLANO DE AÇÃO =====================
+// =============================================================
 
 app.post("/api/planos", async (req, res) => {
-  const baseBody = req.body || {};
-  const body = ensureEmpresaID(baseBody); // garante empresaID também nos planos
+  const body = ensureEmpresaID(req.body);
 
   const {
     empresaID,
-    origem,          // "Ambiente" | "Psicossocial" | "Liderança & Gestão" | "RH"
-    secao,           // ex.: "Comunicação & Liderança"
-    indicador,       // texto da pergunta
-    unidade,         // ex.: "Planta SC"
-    ref_mes,         // "YYYY-MM" (opcional)
+    origem,
+    secao,
+    indicador,
+    unidade,
+    ref_mes,
     responsavel_nome,
     responsavel_email,
     prazo,
@@ -157,7 +159,7 @@ app.post("/api/planos", async (req, res) => {
     plano_id,
     token,
     criado_em: new Date().toISOString(),
-    empresaID: empresaID || null,
+    empresaID,
     origem: origem || null,
     secao: secao || null,
     indicador: indicador || null,
@@ -173,45 +175,45 @@ app.post("/api/planos", async (req, res) => {
 
   const file = saveBody("plano", plano);
 
+  // Link para edição conclusao
   const baseFront =
     process.env.RADAR_FRONT_BASE ||
     "https://www.safetytechsc.com.br/radar360";
+
   const link = `${baseFront}/radar-acao.html?plano_id=${encodeURIComponent(
     plano_id
   )}&token=${encodeURIComponent(token)}`;
 
+  // Envio de e-mail do plano
   let email_status = "skipped";
   if (responsavel_email) {
     const subject = `Plano de Ação • ${origem || "Radar 360"} • ${
       unidade || ""
     }`.trim();
+
     const html = `
       <div style="font-family:system-ui,Segoe UI,Roboto,Arial">
         <h2>Plano de Ação atribuído</h2>
-        <p><b>Empresa:</b> ${empresaID || "-"}<br/>
-           <b>Origem:</b> ${origem || "-"}<br/>
-           <b>Seção:</b> ${secao || "-"}<br/>
-           <b>Indicador:</b> ${indicador || "-"}<br/>
-           <b>Unidade:</b> ${unidade || "-"}<br/>
-           ${ref_mes ? `<b>Referência:</b> ${ref_mes}<br/>` : ""}
+        <p>
+          <b>Empresa:</b> ${empresaID}<br/>
+          <b>Origem:</b> ${origem || "-"}<br/>
+          <b>Seção:</b> ${secao || "-"}<br/>
+          <b>Indicador:</b> ${indicador || "-"}<br/>
+          <b>Unidade:</b> ${unidade || "-"}<br/>
+          ${ref_mes ? `<b>Referência:</b> ${ref_mes}<br/>` : ""}
         </p>
-        <p>Clique para abrir e concluir (anexe evidência ao finalizar):<br/>
+        <p>
+          Clique para abrir o plano:<br/>
           <a href="${link}" target="_blank">${link}</a>
         </p>
         <hr/>
         <p style="font-size:12px;color:#666">
-          Se o link acima não abrir, copie e cole no navegador.<br/>
-          Também funciona em: ${baseFront}/radar-acao.html#plano_id=${encodeURIComponent(
-            plano_id
-          )}&token=${encodeURIComponent(token)}
+          Se não abrir, copie/cole no navegador.<br/>
         </p>
       </div>
     `;
-    const sent = await sendPlanEmail({
-      to: responsavel_email,
-      subject,
-      html,
-    });
+
+    const sent = await sendPlanEmail({ to: responsavel_email, subject, html });
     email_status = sent.ok ? "sent" : `failed:${sent.reason}`;
   }
 
@@ -223,15 +225,16 @@ app.post("/api/planos", async (req, res) => {
     token,
     link,
     email_status,
-    empresaID: empresaID || null,
+    empresaID,
   });
 });
 
-// ====== SAFETY VOICE (CANAL ANÔNIMO) ======
-app.post("/api/radar/voice", (req, res) => {
-  const base = req.body || {};
-  const body = ensureEmpresaID(base);
+// =============================================================
+// ====================== SAFETY VOICE ==========================
+// =============================================================
 
+app.post("/api/radar/voice", (req, res) => {
+  const body = ensureEmpresaID(req.body);
   const agora = new Date().toISOString();
 
   const registro = {
@@ -239,50 +242,61 @@ app.post("/api/radar/voice", (req, res) => {
     criado_em: agora,
     meta: {
       unidade: body.meta?.unidade || body.unidade || null,
-      ref_mes: body.meta?.ref_mes || body.ref_mes || (agora.slice(0, 7))
+      ref_mes:
+        body.meta?.ref_mes ||
+        body.ref_mes ||
+        agora.slice(0, 7),
     },
-    tipo: body.tipo || "Nao informado",              // Positivo / Negativo
-    categoria: body.categoria || "Não classificado", // Ambiente, EPI, Liderança, Assédio etc.
-    descricao: body.descricao || null,               // Relato
-    elogio_para: body.elogio_para || null,           // quando for positivo
+    tipo: body.tipo || "Nao informado",
+    categoria: body.categoria || "Não classificado",
+    descricao: body.descricao || null,
+    elogio_para: body.elogio_para || null,
     origem: "Safety Voice",
-    status: body.status || "ABERTO",                 // ABERTO / EM ANÁLISE / ENCERRADO
-    virou_plano: body.virou_plano || false,
-    plano_id: body.plano_id || null
+    status: body.status || "ABERTO",
+    virou_plano: !!body.virou_plano,
+    plano_id: body.plano_id || null,
   };
 
   const file = saveBody("voice", registro);
-  res.json({ ok: true, stored: file, empresaID: registro.empresaID });
+
+  res.json({
+    ok: true,
+    stored: file,
+    empresaID: registro.empresaID,
+  });
 });
 
-// ====== LISTAGEM PARA DASHBOARD ======
+// =============================================================
+// ======================= LISTAGEM =============================
+// =============================================================
 
+// Retorna arquivos que começam com prefixo
 function listByPrefix(prefix) {
-  // Lê todos os arquivos da pasta /data que começam com o prefixo
   const files = fs
     .readdirSync(DATA_DIR)
     .filter((f) => f.startsWith(prefix + "-") && f.endsWith(".json"))
-    .sort(); // ordena do mais antigo para o mais novo
+    .sort();
 
-  // Mapeia cada arquivo para { file, ...conteudoJson }
   return files.map((name) => {
     const full = path.join(DATA_DIR, name);
-    const content = JSON.parse(fs.readFileSync(full, "utf8"));
-    return {
-      file: name,
-      ...content,
-    };
+    return { file: name, ...JSON.parse(fs.readFileSync(full, "utf8")) };
   });
 }
 
-// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano|voice&empresaID=xxx
+/*
+ * GET /api/listar?tipo=...&empresaID=...
+ * tipos permitidos:
+ * ambiente | psicossocial | lideranca | rh | plano | voice
+ */
 app.get("/api/listar", (req, res) => {
   const { tipo, empresaID } = req.query;
 
   if (!tipo) {
-    return res
-      .status(400)
-      .json({ ok: false, error: "tipo_required", hint: "use ?tipo=psicossocial" });
+    return res.status(400).json({
+      ok: false,
+      error: "tipo_required",
+      hint: "use ?tipo=ambiente",
+    });
   }
 
   let prefix = null;
@@ -309,19 +323,24 @@ app.get("/api/listar", (req, res) => {
       return res.status(400).json({
         ok: false,
         error: "tipo_invalid",
-        allowed: ["ambiente", "psicossocial", "lideranca", "rh", "plano", "voice"],
+        allowed: [
+          "ambiente",
+          "psicossocial",
+          "lideranca",
+          "rh",
+          "plano",
+          "voice",
+        ],
       });
   }
 
   try {
     const itens = listByPrefix(prefix);
-
-    // se empresaID vier na query, filtra
     const filtrados = empresaID
-      ? itens.filter((it) => it.empresaID === empresaID)
+      ? itens.filter((i) => i.empresaID === empresaID)
       : itens;
 
-    res.json({
+    return res.json({
       ok: true,
       tipo,
       empresaID: empresaID || null,
@@ -330,13 +349,20 @@ app.get("/api/listar", (req, res) => {
     });
   } catch (e) {
     console.error("Erro ao listar:", e.message);
-    res.status(500).json({ ok: false, error: "read_error", detail: e.message });
+    return res.status(500).json({
+      ok: false,
+      error: "read_error",
+      detail: e.message,
+    });
   }
 });
 
-// ====== START DO SERVIDOR ======
+// =============================================================
+// ==================== START DO SERVIDOR =======================
+// =============================================================
+
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`Radar360 API rodando na porta ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`Radar360 API rodando na porta ${PORT}`)
+);
 
