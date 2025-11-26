@@ -226,6 +226,7 @@ app.post("/api/planos", async (req, res) => {
     empresaID: empresaID || null,
   });
 });
+
 // ====== SAFETY VOICE (CANAL ANÔNIMO) ======
 app.post("/api/radar/voice", (req, res) => {
   const base = req.body || {};
@@ -240,12 +241,12 @@ app.post("/api/radar/voice", (req, res) => {
       unidade: body.meta?.unidade || body.unidade || null,
       ref_mes: body.meta?.ref_mes || body.ref_mes || (agora.slice(0, 7))
     },
-    tipo: body.tipo || "Nao informado",          // Positivo / Negativo
+    tipo: body.tipo || "Nao informado",              // Positivo / Negativo
     categoria: body.categoria || "Não classificado", // Ambiente, EPI, Liderança, Assédio etc.
-    descricao: body.descricao || null,          // Relato
-    elogio_para: body.elogio_para || null,      // quando for positivo
+    descricao: body.descricao || null,               // Relato
+    elogio_para: body.elogio_para || null,           // quando for positivo
     origem: "Safety Voice",
-    status: body.status || "ABERTO",            // ABERTO / EM ANÁLISE / ENCERRADO
+    status: body.status || "ABERTO",                 // ABERTO / EM ANÁLISE / ENCERRADO
     virou_plano: body.virou_plano || false,
     plano_id: body.plano_id || null
   };
@@ -253,7 +254,6 @@ app.post("/api/radar/voice", (req, res) => {
   const file = saveBody("voice", registro);
   res.json({ ok: true, stored: file, empresaID: registro.empresaID });
 });
-
 
 // ====== LISTAGEM PARA DASHBOARD ======
 
@@ -275,7 +275,7 @@ function listByPrefix(prefix) {
   });
 }
 
-// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano&empresaID=xxx
+// GET /api/listar?tipo=psicossocial|ambiente|lideranca|rh|plano|voice&empresaID=xxx
 app.get("/api/listar", (req, res) => {
   const { tipo, empresaID } = req.query;
 
@@ -302,11 +302,14 @@ app.get("/api/listar", (req, res) => {
     case "plano":
       prefix = "plano";
       break;
+    case "voice":
+      prefix = "voice";
+      break;
     default:
       return res.status(400).json({
         ok: false,
         error: "tipo_invalid",
-        allowed: ["ambiente", "psicossocial", "lideranca", "rh", "plano"],
+        allowed: ["ambiente", "psicossocial", "lideranca", "rh", "plano", "voice"],
       });
   }
 
@@ -336,3 +339,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Radar360 API rodando na porta ${PORT}`);
 });
+
