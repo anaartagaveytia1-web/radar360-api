@@ -226,6 +226,34 @@ app.post("/api/planos", async (req, res) => {
     empresaID: empresaID || null,
   });
 });
+// ====== SAFETY VOICE (CANAL ANÔNIMO) ======
+app.post("/api/radar/voice", (req, res) => {
+  const base = req.body || {};
+  const body = ensureEmpresaID(base);
+
+  const agora = new Date().toISOString();
+
+  const registro = {
+    empresaID: body.empresaID,
+    criado_em: agora,
+    meta: {
+      unidade: body.meta?.unidade || body.unidade || null,
+      ref_mes: body.meta?.ref_mes || body.ref_mes || (agora.slice(0, 7))
+    },
+    tipo: body.tipo || "Nao informado",          // Positivo / Negativo
+    categoria: body.categoria || "Não classificado", // Ambiente, EPI, Liderança, Assédio etc.
+    descricao: body.descricao || null,          // Relato
+    elogio_para: body.elogio_para || null,      // quando for positivo
+    origem: "Safety Voice",
+    status: body.status || "ABERTO",            // ABERTO / EM ANÁLISE / ENCERRADO
+    virou_plano: body.virou_plano || false,
+    plano_id: body.plano_id || null
+  };
+
+  const file = saveBody("voice", registro);
+  res.json({ ok: true, stored: file, empresaID: registro.empresaID });
+});
+
 
 // ====== LISTAGEM PARA DASHBOARD ======
 
