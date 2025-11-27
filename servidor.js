@@ -18,7 +18,6 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Salva JSON na pasta /data
 function saveBody(prefix, body) {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const file = path.join(DATA_DIR, `${prefix}-${ts}.json`);
@@ -48,7 +47,6 @@ if (EMAIL_ENABLED) {
   });
 }
 
-// Enviar e-mail de plano (caso configurado no Render)
 async function sendPlanEmail({ to, subject, html }) {
   if (!EMAIL_ENABLED || !transporter) {
     return { ok: false, reason: "email_not_configured" };
@@ -81,14 +79,9 @@ function ensureEmpresaID(body = {}) {
 // =============================================================
 // ======================= ROTAS BÁSICAS ========================
 // =============================================================
-
-// Health check
 app.get("/", (_req, res) => res.send("Radar360 API OK"));
-
-// Ping
 app.get("/api/ping", (_req, res) => res.json({ ok: true, msg: "pong" }));
 
-// Debug de email (não mostra senha)
 app.get("/api/debug-email", (_req, res) => {
   res.json({
     ok: true,
@@ -103,7 +96,6 @@ app.get("/api/debug-email", (_req, res) => {
 // =============================================================
 // ================= FORMULÁRIOS DO RADAR =======================
 // =============================================================
-
 app.post("/api/radar/ambiente", (req, res) => {
   const body = ensureEmpresaID(req.body);
   const file = saveBody("ambiente", body);
@@ -128,19 +120,33 @@ app.post("/api/radar/rh", (req, res) => {
   res.json({ ok: true, stored: file, empresaID: body.empresaID });
 });
 
-// ======================= NOVO FORMULÁRIO =======================
-// ======================= RAIO-X DO RISCO =======================
-
+// =============================================================
+// ===================== RAIO-X DO RISCO ========================
+// =============================================================
 app.post("/api/radar/raiox", (req, res) => {
   const body = ensureEmpresaID(req.body);
-  const file = saveBody("raiox", body);
-  res.json({ ok: true, stored: file, empresaID: body.empresaID });
+
+  const registro = {
+    empresaID: body.empresaID,
+    criado_em: new Date().toISOString(),
+    funcao: body.funcao || null,
+    unidade: body.unidade || null,
+    riscos: body.riscos || [],
+    resumo: body.resumo || {},
+  };
+
+  const file = saveBody("raiox", registro);
+
+  return res.json({
+    ok: true,
+    stored: file,
+    empresaID: registro.empresaID
+  });
 });
 
 // =============================================================
 // =================== CRIAR PLANO DE AÇÃO =====================
 // =============================================================
-
 app.post("/api/planos", async (req, res) => {
   const body = ensureEmpresaID(req.body);
 
@@ -174,17 +180,16 @@ app.post("/api/planos", async (req, res) => {
     indicador: indicador || null,
     unidade: unidade || null,
     ref_mes: ref_mes || null,
-    responsavel_nome: responsavel_nome || null,
-    responsavel_email: responsavel_email || null,
-    prazo: prazo || null,
+    responsavel_nome,
+    responsavel_email,
+    prazo,
     prioridade: prioridade || "Alta",
-    acao: acao || null,
+    acao,
     status: "ABERTO",
   };
 
   const file = saveBody("plano", plano);
 
-  // Link para edição conclusao
   const baseFront =
     process.env.RADAR_FRONT_BASE ||
     "https://www.safetytechsc.com.br/radar360";
@@ -193,7 +198,6 @@ app.post("/api/planos", async (req, res) => {
     plano_id
   )}&token=${encodeURIComponent(token)}`;
 
-  // Envio de e-mail do plano
   let email_status = "skipped";
   if (responsavel_email) {
     const subject = `Plano de Ação • ${origem || "Radar 360"} • ${
@@ -215,10 +219,6 @@ app.post("/api/planos", async (req, res) => {
           Clique para abrir o plano:<br/>
           <a href="${link}" target="_blank">${link}</a>
         </p>
-        <hr/>
-        <p style="font-size:12px;color:#666">
-          Se não abrir, copie/cole no navegador.<br/>
-        </p>
       </div>
     `;
 
@@ -239,9 +239,8 @@ app.post("/api/planos", async (req, res) => {
 });
 
 // =============================================================
-// ======================= SAFETY VOICE ==========================
+// ====================== SAFETY VOICE ==========================
 // =============================================================
-
 app.post("/api/radar/voice", (req, res) => {
   const body = ensureEmpresaID(req.body);
   const agora = new Date().toISOString();
@@ -278,8 +277,6 @@ app.post("/api/radar/voice", (req, res) => {
 // =============================================================
 // ======================= LISTAGEM =============================
 // =============================================================
-
-// Retorna arquivos que começam com prefixo
 function listByPrefix(prefix) {
   const files = fs
     .readdirSync(DATA_DIR)
@@ -292,11 +289,6 @@ function listByPrefix(prefix) {
   });
 }
 
-/*
- * GET /api/listar?tipo=...&empresaID=...
- * tipos permitidos:
- * ambiente | psicossocial | lideranca | rh | plano | voice | raiox
- */
 app.get("/api/listar", (req, res) => {
   const { tipo, empresaID } = req.query;
 
@@ -310,40 +302,17 @@ app.get("/api/listar", (req, res) => {
 
   let prefix = null;
   switch (tipo) {
-    case "ambiente":
-      prefix = "ambiente";
-      break;
-    case "psicossocial":
-      prefix = "psicossocial";
-      break;
-    case "lideranca":
-      prefix = "lideranca";
-      break;
-    case "rh":
-      prefix = "rh";
-      break;
-    case "plano":
-      prefix = "plano";
-      break;
-    case "voice":
-      prefix = "voice";
-      break;
-    case "raiox":
-      prefix = "raiox";
-      break;
+    case "ambiente": prefix = "ambiente"; break;
+    case "psicossocial": prefix = "psicossocial"; break;
+    case "lideranca": prefix = "lideranca"; break;
+    case "rh": prefix = "rh"; break;
+    case "plano": prefix = "plano"; break;
+    case "voice": prefix = "voice"; break;
+    case "raiox": prefix = "raiox"; break; // <—— AQUI ESTÁ A INTEGRAÇÃO
     default:
       return res.status(400).json({
         ok: false,
         error: "tipo_invalid",
-        allowed: [
-          "ambiente",
-          "psicossocial",
-          "lideranca",
-          "rh",
-          "plano",
-          "voice",
-          "raiox",
-        ],
       });
   }
 
@@ -361,7 +330,6 @@ app.get("/api/listar", (req, res) => {
       itens: filtrados,
     });
   } catch (e) {
-    console.error("Erro ao listar:", e.message);
     return res.status(500).json({
       ok: false,
       error: "read_error",
@@ -373,9 +341,7 @@ app.get("/api/listar", (req, res) => {
 // =============================================================
 // ==================== START DO SERVIDOR =======================
 // =============================================================
-
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
   console.log(`Radar360 API rodando na porta ${PORT}`)
 );
-
