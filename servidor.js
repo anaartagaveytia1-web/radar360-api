@@ -121,9 +121,9 @@ app.post("/api/radar/rh", (req, res) => {
 });
 
 // =============================================================
-// ===================== RAIO-X DO RISCO ========================
+// ====================== RAIO-X DO RISCO =======================
 // =============================================================
-app.post("/api/radar/raiox", (req, res) => {
+app.post("/api/raiox", (req, res) => {
   const body = ensureEmpresaID(req.body);
 
   const registro = {
@@ -131,13 +131,15 @@ app.post("/api/radar/raiox", (req, res) => {
     criado_em: new Date().toISOString(),
     funcao: body.funcao || null,
     unidade: body.unidade || null,
-    riscos: body.riscos || [],
-    resumo: body.resumo || {},
+    riscos: body.riscos || [],        // lista de riscos selecionados
+    matriz: body.matriz || [],        // probabilidade x impacto
+    maior_risco: body.maior_risco || null,
+    resumo: body.resumo || null
   };
 
   const file = saveBody("raiox", registro);
 
-  return res.json({
+  res.json({
     ok: true,
     stored: file,
     empresaID: registro.empresaID
