@@ -129,12 +129,12 @@ app.post("/api/raiox", (req, res) => {
   const registro = {
     empresaID: body.empresaID,
     criado_em: new Date().toISOString(),
-    funcao: body.funcao || null,
-    unidade: body.unidade || null,
-    riscos: body.riscos || [],        // lista de riscos selecionados
-    matriz: body.matriz || [],        // probabilidade x impacto
-    maior_risco: body.maior_risco || null,
-    resumo: body.resumo || null
+
+    // AQUI ESTÁ A CORREÇÃO PRINCIPAL
+    meta: body.meta || null,
+
+    // lista completa de riscos gerados pelo formulário
+    riscos: body.riscos || []
   };
 
   const file = saveBody("raiox", registro);
@@ -281,7 +281,8 @@ app.post("/api/radar/voice", (req, res) => {
 // =============================================================
 function listByPrefix(prefix) {
   const files = fs
-    .readdirSync(DATA_DIR)
+    .
+readdirSync(DATA_DIR)
     .filter((f) => f.startsWith(prefix + "-") && f.endsWith(".json"))
     .sort();
 
@@ -298,7 +299,6 @@ app.get("/api/listar", (req, res) => {
     return res.status(400).json({
       ok: false,
       error: "tipo_required",
-      hint: "use ?tipo=ambiente",
     });
   }
 
@@ -310,7 +310,7 @@ app.get("/api/listar", (req, res) => {
     case "rh": prefix = "rh"; break;
     case "plano": prefix = "plano"; break;
     case "voice": prefix = "voice"; break;
-    case "raiox": prefix = "raiox"; break; // <—— AQUI ESTÁ A INTEGRAÇÃO
+    case "raiox": prefix = "raiox"; break; 
     default:
       return res.status(400).json({
         ok: false,
@@ -347,3 +347,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
   console.log(`Radar360 API rodando na porta ${PORT}`)
 );
+
